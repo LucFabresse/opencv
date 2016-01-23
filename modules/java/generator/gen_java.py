@@ -13,8 +13,6 @@ else:
 class_ignore_list = (
     #core
     "FileNode", "FileStorage", "KDTree", "KeyPoint", "DMatch",
-    #videoio
-    #"VideoWriter",
 )
 
 const_ignore_list = (
@@ -61,9 +59,9 @@ const_ignore_list = (
     "CV_CAP_PROP_POS_MSEC",
     "CV_CAP_PROP_POS_FRAMES",
     "CV_CAP_PROP_POS_AVI_RATIO",
-    #"CV_CAP_PROP_FPS",
-    #"CV_CAP_PROP_FOURCC",
-    #"CV_CAP_PROP_FRAME_COUNT",
+    "CV_CAP_PROP_FPS",
+    "CV_CAP_PROP_FOURCC",
+    "CV_CAP_PROP_FRAME_COUNT",
     "CV_CAP_PROP_FORMAT",
     "CV_CAP_PROP_MODE",
     "CV_CAP_PROP_BRIGHTNESS",
@@ -186,6 +184,7 @@ type_dict = {
     "env"     : { "j_type" : "", "jn_type" : "", "jni_type" : "JNIEnv*"},
     "cls"     : { "j_type" : "", "jn_type" : "", "jni_type" : "jclass"},
     "bool"    : { "j_type" : "boolean", "jn_type" : "boolean", "jni_type" : "jboolean", "suffix" : "Z" },
+    "char"    : { "j_type" : "char", "jn_type" : "char", "jni_type" : "jchar", "suffix" : "C" },
     "int"     : { "j_type" : "int", "jn_type" : "int", "jni_type" : "jint", "suffix" : "I" },
     "long"    : { "j_type" : "int", "jn_type" : "int", "jni_type" : "jint", "suffix" : "I" },
     "float"   : { "j_type" : "float", "jn_type" : "float", "jni_type" : "jfloat", "suffix" : "F" },
@@ -300,6 +299,13 @@ type_dict = {
                   "jn_type" : "double[]",
                   "jni_var" : "Vec3d %(n)s(%(n)s_val0, %(n)s_val1, %(n)s_val2)", "jni_type" : "jdoubleArray",
                   "suffix" : "DDD"},
+    "Moments" : {
+        "j_type" : "Moments",
+        "jn_args" : (("double", ".m00"), ("double", ".m10"), ("double", ".m01"), ("double", ".m20"), ("double", ".m11"),
+                     ("double", ".m02"), ("double", ".m30"), ("double", ".m21"), ("double", ".m12"), ("double", ".m03")),
+        "jni_var" : "Moments %(n)s(%(n)s_m00, %(n)s_m10, %(n)s_m01, %(n)s_m20, %(n)s_m11, %(n)s_m02, %(n)s_m30, %(n)s_m21, %(n)s_m12, %(n)s_m03)",
+        "jni_type" : "jdoubleArray",
+        "suffix" : "DDDDDDDDDD"},
 
 }
 
@@ -507,55 +513,6 @@ JNIEXPORT jdoubleArray JNICALL Java_org_opencv_core_Core_n_1minMaxLocManual
         "moveWindow"        : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
         "resizeWindow"      : {'j_code' : '', 'jn_code' : '', 'cpp_code' : '' },
     }, # Highgui
-
-    'VideoCapture' :
-    {
-        "getSupportedPreviewSizes" :
-        {
-            'j_code' :
-"""
-    public java.util.List<org.opencv.core.Size> getSupportedPreviewSizes()
-    {
-        String[] sizes_str = getSupportedPreviewSizes_0(nativeObj).split(",");
-        java.util.List<org.opencv.core.Size> sizes = new java.util.ArrayList<org.opencv.core.Size>(sizes_str.length);
-
-        for (String str : sizes_str) {
-            String[] wh = str.split("x");
-            sizes.add(new org.opencv.core.Size(Double.parseDouble(wh[0]), Double.parseDouble(wh[1])));
-        }
-
-        return sizes;
-    }
-
-""",
-            'jn_code' :
-"""\n    private static native String getSupportedPreviewSizes_0(long nativeObj);\n""",
-            'cpp_code' :
-"""
-JNIEXPORT jstring JNICALL Java_org_opencv_videoio_VideoCapture_getSupportedPreviewSizes_10
-  (JNIEnv *env, jclass, jlong self);
-
-JNIEXPORT jstring JNICALL Java_org_opencv_videoio_VideoCapture_getSupportedPreviewSizes_10
-  (JNIEnv *env, jclass, jlong self)
-{
-    static const char method_name[] = "videoio::VideoCapture_getSupportedPreviewSizes_10()";
-    try {
-        LOGD("%s", method_name);
-        VideoCapture* me = (VideoCapture*) self; //TODO: check for NULL
-        union {double prop; const char* name;} u;
-        u.prop = me->get(CAP_PROP_ANDROID_PREVIEW_SIZES_STRING);
-        return env->NewStringUTF(u.name);
-    } catch(const std::exception &e) {
-        throwJavaException(env, &e, method_name);
-    } catch (...) {
-        throwJavaException(env, 0, method_name);
-    }
-    return env->NewStringUTF("");
-}
-
-""",
-        }, # getSupportedPreviewSizes
-    }, # VideoCapture
 }
 
 # { class : { func : { arg_name : {"ctype" : ctype, "attrib" : [attrib]} } } }
@@ -973,6 +930,10 @@ class FuncInfo(GeneralInfo):
     def __repr__(self):
         return Template("FUNC <$ctype $namespace.$classpath.$name $args>").substitute(**self.__dict__)
 
+    def __lt__(self, other):
+        return self.__repr__() < other.__repr__()
+
+
 class JavaWrapperGenerator(object):
     def __init__(self):
         self.clear()
@@ -1207,7 +1168,7 @@ class JavaWrapperGenerator(object):
                     ("jdoubleArray _da_retval_ = env->NewDoubleArray(%(cnt)i);  " +
                      "jdouble _tmp_retval_[%(cnt)i] = {%(args)s}; " +
                      "env->SetDoubleArrayRegion(_da_retval_, 0, %(cnt)i, _tmp_retval_);") %
-                    { "cnt" : len(fields), "args" : ", ".join(["_retval_" + f[1] for f in fields]) } )
+                    { "cnt" : len(fields), "args" : ", ".join(["(jdouble)_retval_" + f[1] for f in fields]) } )
             if fi.classname and fi.ctype and not fi.static: # non-static class method except c-tor
                 # adding 'self'
                 jn_args.append ( ArgInfo([ "__int64", "nativeObj", "", [], "" ]) )
@@ -1240,6 +1201,7 @@ class JavaWrapperGenerator(object):
                     if "O" in a.out:
                         if not type_dict[a.ctype]["j_type"].startswith("MatOf"):
                             j_epilogue.append("Converters.Mat_to_%(t)s(%(n)s_mat, %(n)s);" % {"t" : a.ctype, "n" : a.name})
+                            j_epilogue.append( "%s_mat.release();" % a.name )
                         c_epilogue.append( "%(t)s_to_Mat( %(n)s, %(n)s_mat );" % {"n" : a.name, "t" : a.ctype} )
                 else:
                     fields = type_dict[a.ctype].get("jn_args", ((a.ctype, ""),))
@@ -1253,7 +1215,7 @@ class JavaWrapperGenerator(object):
                         j_prologue.append( "double[] %s_out = new double[%i];" % (a.name, len(fields)) )
                         c_epilogue.append( \
                             "jdouble tmp_%(n)s[%(cnt)i] = {%(args)s}; env->SetDoubleArrayRegion(%(n)s_out, 0, %(cnt)i, tmp_%(n)s);" %
-                            { "n" : a.name, "cnt" : len(fields), "args" : ", ".join([a.name + f[1] for f in fields]) } )
+                            { "n" : a.name, "cnt" : len(fields), "args" : ", ".join(["(jdouble)" + a.name + f[1] for f in fields]) } )
                         if a.ctype in ('bool', 'int', 'long', 'float', 'double'):
                             j_epilogue.append('if(%(n)s!=null) %(n)s[0] = (%(t)s)%(n)s_out[0];' % {'n':a.name,'t':a.ctype})
                         else:
@@ -1530,7 +1492,8 @@ JNIEXPORT $rtype JNICALL Java_org_opencv_${module}_${clazz}_$fname
             # finalize()
             ci.j_code.write(
 """
-    protected void delete() {
+    @Override
+    protected void finalize() throws Throwable {
         delete(nativeObj);
     }
 """ )

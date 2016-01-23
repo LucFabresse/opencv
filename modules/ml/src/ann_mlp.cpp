@@ -739,7 +739,7 @@ public:
             int n = layer_sizes[i];
             x[i].resize(n+1);
             df[i].resize(n);
-            dw[i].create(weights[i].size(), CV_64F);
+            dw[i] = Mat::zeros(weights[i].size(), CV_64F);
         }
 
         Mat _idx_m(1, count, CV_32S);
@@ -1317,6 +1317,18 @@ Ptr<ANN_MLP> ANN_MLP::create()
     return makePtr<ANN_MLPImpl>();
 }
 
-}}
+Ptr<ANN_MLP> ANN_MLP::load(const String& filepath)
+{
+    FileStorage fs;
+    fs.open(filepath, FileStorage::READ);
+
+    Ptr<ANN_MLP> ann = makePtr<ANN_MLPImpl>();
+
+    ((ANN_MLPImpl*)ann.get())->read(fs.getFirstTopLevelNode());
+    return ann;
+}
+
+
+    }}
 
 /* End of file. */

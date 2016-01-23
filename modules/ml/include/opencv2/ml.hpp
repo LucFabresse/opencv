@@ -252,6 +252,8 @@ public:
     @param missch The character used to specify missing measurements. It should not be a digit.
         Although it's a non-numerical value, it surely does not affect the decision of whether the
         variable ordered or categorical.
+    @note If the dataset only contains input variables and no responses, use responseStartIdx = -2
+        and responseEndIdx = 0. The output variables vector will just contain zeros.
      */
     static Ptr<TrainData> loadFromCSV(const String& filename,
                                       int headerLineCount,
@@ -673,10 +675,18 @@ public:
 
     /** @brief Retrieves all the support vectors
 
-    The method returns all the support vector as floating-point matrix, where support vectors are
+    The method returns all the support vectors as a floating-point matrix, where support vectors are
     stored as matrix rows.
      */
     CV_WRAP virtual Mat getSupportVectors() const = 0;
+
+    /** @brief Retrieves all the uncompressed support vectors of a linear %SVM
+
+    The method returns all the uncompressed support vectors of a linear %SVM that the compressed
+    support vector, used for prediction, was derived from. They are returned in a floating-point
+    matrix, where the support vectors are stored as matrix rows.
+     */
+    CV_WRAP Mat getUncompressedSupportVectors() const;
 
     /** @brief Retrieves the decision function
 
@@ -709,6 +719,15 @@ public:
     Use StatModel::train to train the model. Since %SVM has several parameters, you may want to
     find the best parameters for your problem, it can be done with SVM::trainAuto. */
     CV_WRAP static Ptr<SVM> create();
+
+    /** @brief Loads and creates a serialized svm from a file
+     *
+     * Use SVM::save to serialize and store an SVM to disk.
+     * Load the SVM from this file again, by calling this function with the path to the file.
+     *
+     * @param filepath path to serialized svm
+     */
+    CV_WRAP static Ptr<SVM> load(const String& filepath);
 };
 
 /****************************************************************************************\
@@ -790,7 +809,7 @@ public:
     Returns vector of covariation matrices. Number of matrices is the number of gaussian mixtures,
     each matrix is a square floating-point matrix NxN, where N is the space dimensionality.
      */
-    virtual void getCovs(std::vector<Mat>& covs) const = 0;
+    CV_WRAP virtual void getCovs(CV_OUT std::vector<Mat>& covs) const = 0;
 
     /** @brief Returns a likelihood logarithm value and an index of the most probable mixture component
     for the given sample.
@@ -804,7 +823,7 @@ public:
     the sample. First element is an index of the most probable mixture component for the given
     sample.
      */
-    CV_WRAP CV_WRAP virtual Vec2d predict2(InputArray sample, OutputArray probs) const = 0;
+    CV_WRAP virtual Vec2d predict2(InputArray sample, OutputArray probs) const = 0;
 
     /** @brief Estimate the Gaussian mixture parameters from a samples set.
 
@@ -1379,6 +1398,16 @@ public:
     Note that the train method has optional flags: ANN_MLP::TrainFlags.
      */
     CV_WRAP static Ptr<ANN_MLP> create();
+
+    /** @brief Loads and creates a serialized ANN from a file
+     *
+     * Use ANN::save to serialize and store an ANN to disk.
+     * Load the ANN from this file again, by calling this function with the path to the file.
+     *
+     * @param filepath path to serialized ANN
+     */
+    CV_WRAP static Ptr<ANN_MLP> load(const String& filepath);
+
 };
 
 /****************************************************************************************\
@@ -1479,10 +1508,6 @@ public:
 @param samples returned samples array
 */
 CV_EXPORTS void randMVNormal( InputArray mean, InputArray cov, int nsamples, OutputArray samples);
-
-/** @brief Generates sample from gaussian mixture distribution */
-CV_EXPORTS void randGaussMixture( InputArray means, InputArray covs, InputArray weights,
-                                  int nsamples, OutputArray samples, OutputArray sampClasses );
 
 /** @brief Creates test set */
 CV_EXPORTS void createConcentricSpheresTestSet( int nsamples, int nfeatures, int nclasses,

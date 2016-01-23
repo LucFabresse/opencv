@@ -41,11 +41,13 @@
 //M*/
 
 #include "precomp.hpp"
+#include "cascadedetect.hpp"
 #include "opencv2/core/core_c.h"
 #include "opencl_kernels_objdetect.hpp"
 
 #include <cstdio>
 #include <iterator>
+#include <limits>
 
 /****************************************************************************************\
       The code below is implementation of HOG (Histogram-of-Oriented Gradients)
@@ -1090,7 +1092,7 @@ static bool ocl_compute_gradients_8UC1(int height, int width, InputArray _img, f
     UMat img = _img.getUMat();
 
     size_t localThreads[3] = { NTHREADS, 1, 1 };
-    size_t globalThreads[3] = { width, height, 1 };
+    size_t globalThreads[3] = { (size_t)width, (size_t)height, 1 };
     char correctGamma = (correct_gamma) ? 1 : 0;
     int grad_quadstep = (int)grad.step >> 3;
     int qangle_elem_size = CV_ELEM_SIZE1(qangle.type());
@@ -1150,7 +1152,7 @@ static bool ocl_compute_hists(int nbins, int block_stride_x, int block_stride_y,
     int qangle_step = (int)qangle.step / qangle_elem_size;
 
     int blocks_in_group = 4;
-    size_t localThreads[3] = { blocks_in_group * 24, 2, 1 };
+    size_t localThreads[3] = { (size_t)blocks_in_group * 24, 2, 1 };
     size_t globalThreads[3] = {((img_block_width * img_block_height + blocks_in_group - 1)/blocks_in_group) * localThreads[0], 2, 1 };
 
     int hists_size = (nbins * CELLS_PER_BLOCK_X * CELLS_PER_BLOCK_Y * 12) * sizeof(float);
@@ -1222,7 +1224,7 @@ static bool ocl_normalize_hists(int nbins, int block_stride_x, int block_stride_
     }
     else
     {
-        k.create("normalize_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, "");
+        k.create("normalize_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, "-D WAVE_SIZE=32");
         if(k.empty())
             return false;
         if(is_cpu)
@@ -1269,7 +1271,7 @@ static bool ocl_extract_descrs_by_rows(int win_height, int win_width, int block_
 
     int descriptors_quadstep = (int)descriptors.step >> 2;
 
-    size_t globalThreads[3] = { img_win_width * NTHREADS, img_win_height, 1 };
+    size_t globalThreads[3] = { (size_t)img_win_width * NTHREADS, (size_t)img_win_height, 1 };
     size_t localThreads[3] = { NTHREADS, 1, 1 };
 
     int idx = 0;
@@ -1303,7 +1305,7 @@ static bool ocl_extract_descrs_by_cols(int win_height, int win_width, int block_
 
     int descriptors_quadstep = (int)descriptors.step >> 2;
 
-    size_t globalThreads[3] = { img_win_width * NTHREADS, img_win_height, 1 };
+    size_t globalThreads[3] = { (size_t)img_win_width * NTHREADS, (size_t)img_win_height, 1 };
     size_t localThreads[3] = { NTHREADS, 1, 1 };
 
     int idx = 0;
@@ -1459,6 +1461,7 @@ void HOGDescriptor::detect(const Mat& img,
     Size winStride, Size padding, const std::vector<Point>& locations) const
 {
     hits.clear();
+    weights.clear();
     if( svmDetector.empty() )
         return;
 
@@ -1648,7 +1651,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
     {
     case 180:
         nthreads = 180;
-        k.create("classify_hists_180_kernel", ocl::objdetect::objdetect_hog_oclsrc, "");
+        k.create("classify_hists_180_kernel", ocl::objdetect::objdetect_hog_oclsrc, "-D WAVE_SIZE=32");
         if(k.empty())
             return false;
         if(is_cpu)
@@ -1664,7 +1667,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
 
     case 252:
         nthreads = 256;
-        k.create("classify_hists_252_kernel", ocl::objdetect::objdetect_hog_oclsrc, "");
+        k.create("classify_hists_252_kernel", ocl::objdetect::objdetect_hog_oclsrc, "-D WAVE_SIZE=32");
         if(k.empty())
             return false;
         if(is_cpu)
@@ -1680,7 +1683,7 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
 
     default:
         nthreads = 256;
-        k.create("classify_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, "");
+        k.create("classify_hists_kernel", ocl::objdetect::objdetect_hog_oclsrc, "-D WAVE_SIZE=32");
         if(k.empty())
             return false;
         if(is_cpu)
@@ -1701,8 +1704,8 @@ static bool ocl_classify_hists(int win_height, int win_width, int block_stride_y
     int img_block_width = (width - CELLS_PER_BLOCK_X * CELL_WIDTH + block_stride_x) /
         block_stride_x;
 
-    size_t globalThreads[3] = { img_win_width * nthreads, img_win_height, 1 };
-    size_t localThreads[3] = { nthreads, 1, 1 };
+    size_t globalThreads[3] = { (size_t)img_win_width * nthreads, (size_t)img_win_height, 1 };
+    size_t localThreads[3] = { (size_t)nthreads, 1, 1 };
 
     idx = k.set(idx, block_hist_size);
     idx = k.set(idx, img_win_width);
@@ -1821,7 +1824,9 @@ static bool ocl_detectMultiScale(InputArray _img, std::vector<Rect> &found_locat
             all_candidates.push_back(Rect(Point2d(locations[j]) * scale, scaled_win_size));
     }
     found_locations.assign(all_candidates.begin(), all_candidates.end());
-    cv::groupRectangles(found_locations, (int)group_threshold, 0.2);
+    groupRectangles(found_locations, (int)group_threshold, 0.2);
+    clipObjects(imgSize, found_locations, 0, 0);
+
     return true;
 }
 #endif //HAVE_OPENCL
@@ -1877,6 +1882,7 @@ void HOGDescriptor::detectMultiScale(
         groupRectangles_meanshift(foundLocations, foundWeights, foundScales, finalThreshold, winSize);
     else
         groupRectangles(foundLocations, foundWeights, (int)finalThreshold, 0.2);
+    clipObjects(imgSize, foundLocations, 0, &foundWeights);
 }
 
 void HOGDescriptor::detectMultiScale(InputArray img, std::vector<Rect>& foundLocations,
@@ -3532,7 +3538,7 @@ void HOGDescriptor::groupRectangles(std::vector<cv::Rect>& rectList, std::vector
 
     std::vector<cv::Rect_<double> > rrects(nclasses);
     std::vector<int> numInClass(nclasses, 0);
-    std::vector<double> foundWeights(nclasses, DBL_MIN);
+    std::vector<double> foundWeights(nclasses, -std::numeric_limits<double>::max());
     int i, j, nlabels = (int)labels.size();
 
     for( i = 0; i < nlabels; i++ )

@@ -80,7 +80,7 @@ public:
                               int _modelPoints=0, double _threshold=0, double _confidence=0.99, int _maxIters=1000)
     : cb(_cb), modelPoints(_modelPoints), threshold(_threshold), confidence(_confidence), maxIters(_maxIters)
     {
-        checkPartialSubsets = true;
+        checkPartialSubsets = false;
     }
 
     int findInliers( const Mat& m1, const Mat& m2, const Mat& model, Mat& err, Mat& mask, double thresh ) const
@@ -109,9 +109,9 @@ public:
         cv::AutoBuffer<int> _idx(modelPoints);
         int* idx = _idx;
         int i = 0, j, k, iters = 0;
-        int esz1 = (int)m1.elemSize(), esz2 = (int)m2.elemSize();
         int d1 = m1.channels() > 1 ? m1.channels() : m1.cols;
         int d2 = m2.channels() > 1 ? m2.channels() : m2.cols;
+        int esz1 = (int)m1.elemSize1()*d1, esz2 = (int)m2.elemSize1()*d2;
         int count = m1.checkVector(d1), count2 = m2.checkVector(d2);
         const int *m1ptr = m1.ptr<int>(), *m2ptr = m2.ptr<int>();
 
@@ -145,6 +145,9 @@ public:
                     ms2ptr[i*esz2 + k] = m2ptr[idx_i*esz2 + k];
                 if( checkPartialSubsets && !cb->checkSubset( ms1, ms2, i+1 ))
                 {
+                    // we may have selected some bad points;
+                    // so, let's remove some of them randomly
+                    i = rng.uniform(0, i+1);
                     iters++;
                     continue;
                 }
@@ -206,7 +209,7 @@ public:
             int i, goodCount, nmodels;
             if( count > modelPoints )
             {
-                bool found = getSubset( m1, m2, ms1, ms2, rng );
+                bool found = getSubset( m1, m2, ms1, ms2, rng, 10000 );
                 if( !found )
                 {
                     if( iter == 0 )

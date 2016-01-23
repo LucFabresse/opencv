@@ -74,7 +74,7 @@ See the OpenCV sample camshiftdemo.c that tracks colored objects.
 
 @note
 -   (Python) A sample explaining the camshift tracking algorithm can be found at
-    opencv_source_code/samples/python2/camshift.py
+    opencv_source_code/samples/python/camshift.py
  */
 CV_EXPORTS_W RotatedRect CamShift( InputArray probImage, CV_IN_OUT Rect& window,
                                    TermCriteria criteria );
@@ -166,9 +166,9 @@ The function implements a sparse iterative version of the Lucas-Kanade optical f
 -   An example using the Lucas-Kanade optical flow algorithm can be found at
     opencv_source_code/samples/cpp/lkdemo.cpp
 -   (Python) An example using the Lucas-Kanade optical flow algorithm can be found at
-    opencv_source_code/samples/python2/lk_track.py
+    opencv_source_code/samples/python/lk_track.py
 -   (Python) An example using the Lucas-Kanade tracker for homography matching can be found at
-    opencv_source_code/samples/python2/lk_homography.py
+    opencv_source_code/samples/python/lk_homography.py
  */
 CV_EXPORTS_W void calcOpticalFlowPyrLK( InputArray prevImg, InputArray nextImg,
                                         InputArray prevPts, InputOutputArray nextPts,
@@ -213,7 +213,7 @@ The function finds an optical flow for each prev pixel using the @cite Farneback
 -   An example using the optical flow algorithm described by Gunnar Farneback can be found at
     opencv_source_code/samples/cpp/fback.cpp
 -   (Python) An example using the optical flow algorithm described by Gunnar Farneback can be
-    found at opencv_source_code/samples/python2/opt_flow.py
+    found at opencv_source_code/samples/python/opt_flow.py
  */
 CV_EXPORTS_W void calcOpticalFlowFarneback( InputArray prev, InputArray next, InputOutputArray flow,
                                             double pyr_scale, int levels, int winsize,
@@ -278,6 +278,7 @@ order to provide an image similar to templateImage, same type as temlateImage.
 criteria.epsilon defines the threshold of the increment in the correlation coefficient between two
 iterations (a negative criteria.epsilon makes criteria.maxcount the only termination criterion).
 Default values are shown in the declaration above.
+@param inputMask An optional mask to indicate valid values of inputImage.
 
 The function estimates the optimum transformation (warpMatrix) with respect to ECC criterion
 (@cite EP08), that is
@@ -309,7 +310,8 @@ estimateRigidTransform, findHomography
  */
 CV_EXPORTS_W double findTransformECC( InputArray templateImage, InputArray inputImage,
                                       InputOutputArray warpMatrix, int motionType = MOTION_AFFINE,
-                                      TermCriteria criteria = TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 50, 0.001));
+                                      TermCriteria criteria = TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 50, 0.001),
+                                      InputArray inputMask = noArray());
 
 /** @brief Kalman filter class.
 
