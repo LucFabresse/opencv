@@ -1582,6 +1582,9 @@ JNIEXPORT void JNICALL Java_org_opencv_%(module)s_%(j_cls)s_delete
 
 
 if __name__ == "__main__":
+    
+    # headers.txt is a copy of ../../../build/modules/python3/headers.txt but replacing ; with space
+    # ./gen_java.py /Users/luc/Pharo/OpenCV/OpenCV.git/modules/Python/src2/hdr_parser.py cvjava `cat headers` > build/out.log 2>&1
     if len(sys.argv) < 4:
         print("Usage:\n", \
             os.path.basename(sys.argv[0]), \
@@ -1589,7 +1592,7 @@ if __name__ == "__main__":
         print("Current args are: ", ", ".join(["'"+a+"'" for a in sys.argv]))
         exit(0)
 
-    dstdir = "."
+    dstdir = "./build/"
     hdr_parser_path = os.path.abspath(sys.argv[1])
     if hdr_parser_path.endswith(".py"):
         hdr_parser_path = os.path.dirname(hdr_parser_path)
@@ -1597,10 +1600,10 @@ if __name__ == "__main__":
     import hdr_parser
     module = sys.argv[2]
     srcfiles = sys.argv[3:]
-    logging.basicConfig(filename='%s/%s.log' % (dstdir, module), format=None, filemode='w', level=logging.INFO)
+    logging.basicConfig(filename='%s/%s.log' % (dstdir, module), format=None, filemode='w', level=logging.NOTSET)
     handler = logging.StreamHandler()
-    handler.setLevel(logging.WARNING)
+    handler.setLevel(logging.NOTSET)
     logging.getLogger().addHandler(handler)
-    #print("Generating module '" + module + "' from headers:\n\t" + "\n\t".join(srcfiles))
+    print("Generating module '" + module + "' from headers:\n\t" + "\n\t".join(srcfiles))
     generator = JavaWrapperGenerator()
     generator.gen(srcfiles, module, dstdir)
