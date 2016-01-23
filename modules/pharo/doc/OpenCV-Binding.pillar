@@ -1,0 +1,221 @@
+!Building a Pharo/OpenCV binding
+
+!!OpenCV
+
+- *Basic OpenCV structures>http://docs.opencv.org/modules/core/doc/basic_structures.html*
+
+When you see in the reference manual or in OpenCV source code a function that takes ""InputArray"", it means that you can actually pass ""Mat"", ""Matx"", ""vector<T>"" etc.
+
+The ""Mat"" has a header and a data fields. 
+The data field may be externally allocated:
+
+[[[
+// encaspulate external char* data in a Mat for in place processing (GaussianBlur)
+void process_video_frame(const unsigned char* pixels,
+                         int width, int height, int step)
+{
+    Mat img(height, width, CV_8UC3, pixels, step);
+    GaussianBlur(img, img, Size(7,7), 1.5, 1.5);
+}
+]]]
+
+
+!!How-to compile OpenCV 3.0 with Python3 binding on OsX
+
+*http://hugofeng.info/2014/04/17/Compile%20OpenCV3.0%20on%20OSX/*
+
+[[[language=shell	
+wget https://github.com/Itseez/opencv/archive/master.zip
+unzip master.zip
+mv master opencv-src
+cd opencv-src
+mkdir build
+cd build
+cmake "Unix Makefile" -D CMAKE_OSX_ARCHITECTURES=i386 -D BUILD_PERF_TESTS=OFF -DBUILD_opencv_python2=OFF -DBUILD_opencv_python3=ON -DPYTHON3_EXECUTABLE=/opt/local/bin/python3.4 -DPYTHON3_INCLUDE_DIR=/opt/local/Library/Frameworks/Python.framework/Versions/3.4/include/python3.4m -DPYTHON3_LIBRARY=/opt/local/Library/Frameworks/Python.framework/Versions/3.4/lib/libpython3.4.dylib -DPYTHON3_NUMPY_INCLUDE_DIRS=/opt/local/Library/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages/numpy/core/include -DPYTHON3_PACKAGES_PATH=/opt/local/Library/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages/ ..
+make -j8 VERBOSE=1
+]]]
+
+To install to test:
+
+[[[language=shell	
+cd /Users/Pharo/OpenCV/OpenCV3/
+make install VERBOSE=1 DESTDIR=/Users/luc/Pharo/OpenCV/OpenCV3 
+]]]
+
+
+!!Into the Python binding for OpenCV  
+
+*Python binding for OpenCV Doc> http://docs.opencv.org/master/da/d49/tutorial_py_bindings_basics.html*
+
+The Python to OpenCV binding generation involves multiple steps at different time.
+
+!!!""headers.txt"" generation
+
+During the cmake step, a file named ""headers.txt"" is generated.
+It constains the filename of all headers file (.hpp) that should be exposed to Python. Exercpt of the content of ""headers.txt"":
+
+[[[
+/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/affine.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/base.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/bufferpool.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/core.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/cvstd.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/cvstd.inl.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/directx.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/eigen.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/ippasync.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/mat.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/mat.inl.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/matx.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/ocl.hpp;/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include/opencv2/core/ocl_genbase.hpp
+]]]
+
+!!!pyopencv_generated_\*.h generation
+
+Then, during the make step, the ""gen2.py"" script is executed:
+
+[[[language=shell	
+gen2.py outputdir headers.txt 
+]]]
+
+This ""gen2.py"" parses all headers listed in ""headers.txt"" and it generates 5 c++ header files in ""outputdir"":
+
+- ""pyopencv_generated_include.h"" contains includes for each parsed .hpp file
+- ""pyopencv_generated_types.h"" contains C structs/functions to export OpenCV types (defined as structs or Classes in C++) to Python allowing Python to create variables of those types, deallocate them, manipulate them as regular Python objects, ...
+- ""pyopencv_generated_funcs.h"" contains function declarations to export OpenCV functions defined directly in a namespace such as cv::imread
+- ""pyopencv_generated_ns_reg.h""
+- ""pyopencv_generated_type_reg.h""
+
+!!!The ""hdr_parser.py"" script
+
+Internally, ""gen2.py"" uses the ""hdr_parser.py"" script to parse each header file.
+
+This parser does the following:
+- for each class or struct declaration with the annotation CV_EXPORTS_W or CV_EXPORTS_AS 
+
+
+""Not understood yet:"" the ""hdr_parser.py"" defines the ""CppHeaderParser"" class with a ""parse"" method. This method takes two parameters: the name of the header file to parse and a boolean named ""wmode"" (True by default). This wmode is not clear to me. When it is True, the declarations returned by the parser does not contains those with the CV_EXPORT annotation. The parser also did some type conversions: Mat& became Mat, ... 
+
+
+!!!cv2.cpp
+
+
+
+!!!!What is the purpose of cv2.cpp
+
+""cv2.cpp"" is the core file of the OpenCV to Python binding.
+The aim of the code it contains is to wrap all c++ code of OpenCV into C code exposed to the Python FFI library (<Python.h>).
+
+This files includes:
+
+- OpenCV c/c++ headers file. For example it includes ""opencv2/core/types_c.h"" which defines C types for OpenCV
+- ""opencv2/opencv_modules.hpp"" which includes all core OpenCV modules
+- ""pyopencv_generated_include.h"" which includes all parsed modules exposed through the Python Binding 
+- ""Python.h"" the Python FFI to create the ""cv2"" Python module as a native dynamic library (cv2.so || cv2.dylib) that can be loaded by the Python interpreter. For example, this library provides the ""PyObject"" C struct
+- ""numpy/ndarrayobject.h"" which is the C interface of the Numpy Python library (Numerical lib). ""cv2.cpp"" provides (in C/C++) data conversion functions between OpenCV types (Mat, ...) to Numpy types
+
+!!!!Compiling cv2.cpp -> cv2.o
+
+[[[
+cd /Users/luc/Pharo/OpenCV/OpenCV.git/build/modules/python3 
+
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++   
+
+-D__OPENCV_BUILD=1 
+-Dopencv_python3_EXPORTS 
+
+-I/opt/local/include    
+
+-fsigned-char -W -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wno-narrowing -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -fdiagnostics-show-option -Wno-long-long -Qunused-arguments -Wno-semicolon-before-method-body -fno-omit-frame-pointer -msse -msse2 -mno-avx -msse3 -mno-ssse3 -mno-sse4.1 -mno-sse4.2 -fvisibility=hidden -fvisibility-inlines-hidden -Wno-unused-function -O3 -DNDEBUG  -DNDEBUG -arch i386 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk -fPIC
+
+
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/3rdparty/ippicv/unpack/ippicv_osx/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/build 
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/python/python3/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/python/python3/src
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/build/modules/python3
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/hal/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/core/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/flann/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/imgproc/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/ml/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/photo/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/video/include
+-I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/imgcodecs/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/shape/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/videoio/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/highgui/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/objdetect/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/superres/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/features2d/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/calib3d/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/stitching/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/videostab/include -I/opt/local/Library/Frameworks/Python.framework/Versions/3.4/include/python3.4m -I/opt/local/Library/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages/numpy/core/include -I/Users/luc/Pharo/OpenCV/OpenCV.git/modules/python/src2    
+
+-o CMakeFiles/opencv_python3.dir/__/src2/cv2.cpp.o 
+-c /Users/luc/Pharo/OpenCV/OpenCV.git/modules/python/src2/cv2.cpp
+
+]]]
+
+!!!!LINK cv2.o -> cv2.dylib
+
+
+[[[
+cd /Users/luc/Pharo/OpenCV/OpenCV.git/build/modules/python3 && 
+/opt/local/bin/cmake -E cmake_link_script CMakeFiles/opencv_python3.dir/link.txt --verbose=1
+
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++  
+-I/opt/local/include    
+-fsigned-char -W -Werror=return-type -Werror=non-virtual-dtor -Werror=address -Werror=sequence-point -Wformat -Werror=format-security -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Wundef -Winit-self -Wpointer-arith -Wshadow -Wsign-promo -Wno-narrowing -Wno-delete-non-virtual-dtor -Wno-unnamed-type-template-args -fdiagnostics-show-option -Wno-long-long -Qunused-arguments -Wno-semicolon-before-method-body -fno-omit-frame-pointer -msse -msse2 -mno-avx -msse3 -mno-ssse3 -mno-sse4.1 -mno-sse4.2 -fvisibility=hidden -fvisibility-inlines-hidden -Wno-unused-function -O3 -DNDEBUG  -DNDEBUG -arch i386 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.9.sdk 
+
+-dynamiclib 
+
+-Wl,-headerpad_max_install_names -undefined dynamic_lookup  
+
+-L/opt/local/lib   
+CMakeFiles/opencv_python3.dir/__/src2/cv2.cpp.o 
+../../lib/libopencv_hal.a 
+../../lib/libopencv_shape.3.0.0.dylib 
+../../lib/libopencv_superres.3.0.0.dylib 
+../../lib/libopencv_stitching.3.0.0.dylib 
+../../lib/libopencv_videostab.3.0.0.dylib 
+../../lib/libopencv_objdetect.3.0.0.dylib 
+../../lib/libopencv_photo.3.0.0.dylib 
+../../lib/libopencv_video.3.0.0.dylib 
+../../lib/libopencv_calib3d.3.0.0.dylib 
+../../lib/libopencv_features2d.3.0.0.dylib 
+../../lib/libopencv_flann.3.0.0.dylib 
+../../lib/libopencv_ml.3.0.0.dylib 
+../../lib/libopencv_highgui.3.0.0.dylib 
+../../lib/libopencv_videoio.3.0.0.dylib 
+../../lib/libopencv_imgcodecs.3.0.0.dylib 
+../../lib/libopencv_imgproc.3.0.0.dylib 
+../../lib/libopencv_core.3.0.0.dylib 
+../../lib/libopencv_hal.a 
+../../../3rdparty/ippicv/unpack/ippicv_osx/lib/libippicv.a
+
+-install_name /Users/luc/Pharo/OpenCV/OpenCV.git/build/lib/python3/cv2.so
+-o ../../lib/python3/cv2.so
+]]]
+
+
+!!!More details on C++<->Python wrapping
+
+!!!!How Python binding Wrap a const
+
+!!!!How Python binding Wrap a struct
+
+!!!!How Python binding Wrap a namespace
+
+!!!!How Python binding Wrap a global function defined in a namespace
+
+!!!!How Python binding Wrap a class
+
+!!!!How Python binding Wrap a method
+
+!!!!How Python binding Wrap a static method
+
+
+!!The Java binding for OpenCV
+
+[[[
+./gen_java.py /Users/luc/Pharo/OpenCV/OpenCV.git/modules/Python/src2/hdr_parser.py cvjava `cat headers.txt` > build/out.log 2>&1
+]]]
+
+It generates:
+- ""cvjava.cpp"" which will be compiled to cvjava.so or cvjava.dylib and used by JNI
+- 1 Java class for each OpenCV type 
+
+
+!!Design of a Pharo binding for OpenCV
+
+make would execute:
+
+[[[language=shell	
+gen2Pharo.py build headers.txt
+curl http://get.pharo.org/vm+stable | bash
+./vm/pharo --headless Pharo.image eval --save "Gofer it xxx. (OCVBindingGenerator declarations: 'build/allDecls.st') generate"
+]]]
+
+- ""build"" is the directory name in which building files will be generated
+- the ""headers.txt"" comes from the Python building
+- ""gen2Pharo.py"" is a minimal Python script that uses the hdr_parser.py script from the Python binding to parse OpenCV header files and to generate the file ""build/allDecls.st"" that can be directly loaded into Pharo
+
