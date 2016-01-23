@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3.4
 
 from __future__ import print_function
 import hdr_parser, sys, re, os
@@ -51,6 +51,7 @@ else:
 0,"""
 
 gen_template_simple_type_decl = Template("""
+// ------- gen_template_simple_type_decl(${name}) -------->
 struct pyopencv_${name}_t
 {
     PyObject_HEAD
@@ -88,10 +89,12 @@ template<> bool pyopencv_to(PyObject* src, ${cname}& dst, const char* name)
     dst = ((pyopencv_${name}_t*)src)->v;
     return true;
 }
+// <------- /gen_template_simple_type_decl(${name}) --------
 """ % head_init_str)
 
 
 gen_template_type_decl = Template("""
+// ------- gen_template_type_decl(${name}) -------->
 struct pyopencv_${name}_t
 {
     PyObject_HEAD
@@ -131,7 +134,7 @@ template<> bool pyopencv_to(PyObject* src, Ptr<${cname}>& dst, const char* name)
     dst = ((pyopencv_${name}_t*)src)->v.dynamicCast<${cname}>();
     return true;
 }
-
+// <------- /gen_template_type_decl(${name}) --------
 """ % head_init_str)
 
 gen_template_map_type_cvt = Template("""
@@ -148,6 +151,7 @@ gen_template_set_prop_from_map = Template("""
     }""")
 
 gen_template_type_impl = Template("""
+// ------- gen_template_type_impl(${name}) -------->
 static PyObject* pyopencv_${name}_repr(PyObject* self)
 {
     char str[1000];
@@ -178,6 +182,7 @@ static void pyopencv_${name}_specials(void)
     pyopencv_${name}_Type.tp_getset = pyopencv_${name}_getseters;
     pyopencv_${name}_Type.tp_methods = pyopencv_${name}_methods;${extra_specials}
 }
+// <------- /gen_template_type_impl(${name}) --------
 """)
 
 
@@ -855,6 +860,11 @@ class PythonWrapperGenerator(object):
         f = open(path + "/" + name, "wt")
         f.write(buf.getvalue())
         f.close()
+    
+    def save_raw(self, path, name, buf):
+        f = open(path + "/" + name, "wt")
+        f.write(buf)
+        f.close()
 
     def gen(self, srcfiles, output_path):
         self.clear()
@@ -862,9 +872,21 @@ class PythonWrapperGenerator(object):
 
         # step 1: scan the headers and build more descriptive maps of classes, consts, functions
         for hdr in srcfiles:
-            decls = self.parser.parse(hdr)
+            # decls = self.parser.parse(hdr)
+            decls = self.parser.parse(hdr,False) # LUC
             if len(decls) == 0:
                 continue
+            
+            # LUC
+            parse_output_filename = hdr.split('/')[-1]
+            parse_content = ""
+            for decl in decls:
+                parse_content += str(decl) + "\n"
+                    
+            self.save_raw(output_path, "parse_output_"+parse_output_filename, parse_content)
+            return
+            # \LUC
+            
             self.code_include.write( '#include "{0}"\n'.format(hdr[hdr.rindex('opencv2/'):]) )
             for decl in decls:
                 name = decl[0]
