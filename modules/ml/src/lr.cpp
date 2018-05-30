@@ -81,30 +81,36 @@ public:
     TermCriteria term_crit;
 };
 
-class LogisticRegressionImpl : public LogisticRegression
+class LogisticRegressionImpl CV_FINAL : public LogisticRegression
 {
 public:
 
     LogisticRegressionImpl() { }
     virtual ~LogisticRegressionImpl() {}
 
-    CV_IMPL_PROPERTY(double, LearningRate, params.alpha)
-    CV_IMPL_PROPERTY(int, Iterations, params.num_iters)
-    CV_IMPL_PROPERTY(int, Regularization, params.norm)
-    CV_IMPL_PROPERTY(int, TrainMethod, params.train_method)
-    CV_IMPL_PROPERTY(int, MiniBatchSize, params.mini_batch_size)
-    CV_IMPL_PROPERTY(TermCriteria, TermCriteria, params.term_crit)
+    inline double getLearningRate() const CV_OVERRIDE { return params.alpha; }
+    inline void setLearningRate(double val) CV_OVERRIDE { params.alpha = val; }
+    inline int getIterations() const CV_OVERRIDE { return params.num_iters; }
+    inline void setIterations(int val) CV_OVERRIDE { params.num_iters = val; }
+    inline int getRegularization() const CV_OVERRIDE { return params.norm; }
+    inline void setRegularization(int val) CV_OVERRIDE { params.norm = val; }
+    inline int getTrainMethod() const CV_OVERRIDE { return params.train_method; }
+    inline void setTrainMethod(int val) CV_OVERRIDE { params.train_method = val; }
+    inline int getMiniBatchSize() const CV_OVERRIDE { return params.mini_batch_size; }
+    inline void setMiniBatchSize(int val) CV_OVERRIDE { params.mini_batch_size = val; }
+    inline TermCriteria getTermCriteria() const CV_OVERRIDE { return params.term_crit; }
+    inline void setTermCriteria(TermCriteria val) CV_OVERRIDE { params.term_crit = val; }
 
-    virtual bool train( const Ptr<TrainData>& trainData, int=0 );
-    virtual float predict(InputArray samples, OutputArray results, int flags=0) const;
-    virtual void clear();
-    virtual void write(FileStorage& fs) const;
-    virtual void read(const FileNode& fn);
-    virtual Mat get_learnt_thetas() const { return learnt_thetas; }
-    virtual int getVarCount() const { return learnt_thetas.cols; }
-    virtual bool isTrained() const { return !learnt_thetas.empty(); }
-    virtual bool isClassifier() const { return true; }
-    virtual String getDefaultName() const { return "opencv_ml_lr"; }
+    virtual bool train( const Ptr<TrainData>& trainData, int=0 ) CV_OVERRIDE;
+    virtual float predict(InputArray samples, OutputArray results, int flags=0) const CV_OVERRIDE;
+    virtual void clear() CV_OVERRIDE;
+    virtual void write(FileStorage& fs) const CV_OVERRIDE;
+    virtual void read(const FileNode& fn) CV_OVERRIDE;
+    virtual Mat get_learnt_thetas() const CV_OVERRIDE { return learnt_thetas; }
+    virtual int getVarCount() const CV_OVERRIDE { return learnt_thetas.cols; }
+    virtual bool isTrained() const CV_OVERRIDE { return !learnt_thetas.empty(); }
+    virtual bool isClassifier() const CV_OVERRIDE { return true; }
+    virtual String getDefaultName() const CV_OVERRIDE { return "opencv_ml_lr"; }
 protected:
     Mat calc_sigmoid(const Mat& data) const;
     double compute_cost(const Mat& _data, const Mat& _labels, const Mat& _init_theta);
@@ -127,11 +133,21 @@ Ptr<LogisticRegression> LogisticRegression::create()
     return makePtr<LogisticRegressionImpl>();
 }
 
+Ptr<LogisticRegression> LogisticRegression::load(const String& filepath, const String& nodeName)
+{
+    return Algorithm::load<LogisticRegression>(filepath, nodeName);
+}
+
+
 bool LogisticRegressionImpl::train(const Ptr<TrainData>& trainData, int)
 {
+    CV_TRACE_FUNCTION_SKIP_NESTED();
     // return value
     bool ok = false;
 
+    if (trainData.empty()) {
+        return false;
+    }
     clear();
     Mat _data_i = trainData->getSamples();
     Mat _labels_i = trainData->getResponses();
@@ -304,6 +320,7 @@ float LogisticRegressionImpl::predict(InputArray samples, OutputArray results, i
 
 Mat LogisticRegressionImpl::calc_sigmoid(const Mat& data) const
 {
+    CV_TRACE_FUNCTION();
     Mat dest;
     exp(-data, dest);
     return 1.0/(1.0+dest);
@@ -311,7 +328,8 @@ Mat LogisticRegressionImpl::calc_sigmoid(const Mat& data) const
 
 double LogisticRegressionImpl::compute_cost(const Mat& _data, const Mat& _labels, const Mat& _init_theta)
 {
-    int llambda = 0;
+    CV_TRACE_FUNCTION();
+    float llambda = 0;                   /*changed llambda from int to float to solve issue #7924*/
     int m;
     int n;
     double cost = 0;
@@ -362,9 +380,46 @@ double LogisticRegressionImpl::compute_cost(const Mat& _data, const Mat& _labels
     return cost;
 }
 
+struct LogisticRegressionImpl_ComputeDradient_Impl : ParallelLoopBody
+{
+    const Mat* data;
+    const Mat* theta;
+    const Mat* pcal_a;
+    Mat* gradient;
+    double lambda;
+
+    LogisticRegressionImpl_ComputeDradient_Impl(const Mat& _data, const Mat &_theta, const Mat& _pcal_a, const double _lambda, Mat & _gradient)
+        : data(&_data)
+        , theta(&_theta)
+        , pcal_a(&_pcal_a)
+        , gradient(&_gradient)
+        , lambda(_lambda)
+    {
+
+    }
+
+    void operator()(const cv::Range& r) const CV_OVERRIDE
+    {
+        const Mat& _data  = *data;
+        const Mat &_theta = *theta;
+        Mat & _gradient   = *gradient;
+        const Mat & _pcal_a = *pcal_a;
+        const int m = _data.rows;
+        Mat pcal_ab;
+
+        for (int ii = r.start; ii<r.end; ii++)
+        {
+            Mat pcal_b = _data(Range::all(), Range(ii,ii+1));
+            multiply(_pcal_a, pcal_b, pcal_ab, 1);
+
+            _gradient.row(ii) = (1.0/m)*sum(pcal_ab)[0] + (lambda/m) * _theta.row(ii);
+        }
+    }
+};
 
 void LogisticRegressionImpl::compute_gradient(const Mat& _data, const Mat& _labels, const Mat &_theta, const double _lambda, Mat & _gradient )
 {
+    CV_TRACE_FUNCTION();
     const int m = _data.rows;
     Mat pcal_a, pcal_b, pcal_ab;
 
@@ -379,18 +434,14 @@ void LogisticRegressionImpl::compute_gradient(const Mat& _data, const Mat& _labe
     _gradient.row(0) = ((float)1/m) * sum(pcal_ab)[0];
 
     //cout<<"for each training data entry"<<endl;
-    for(int ii = 1;ii<_gradient.rows;ii++)
-    {
-        pcal_b = _data(Range::all(), Range(ii,ii+1));
-        multiply(pcal_a, pcal_b, pcal_ab, 1);
-
-        _gradient.row(ii) = (1.0/m)*sum(pcal_ab)[0] + (_lambda/m) * _theta.row(ii);
-    }
+    LogisticRegressionImpl_ComputeDradient_Impl invoker(_data, _theta, pcal_a, _lambda, _gradient);
+    cv::parallel_for_(cv::Range(1, _gradient.rows), invoker);
 }
 
 
 Mat LogisticRegressionImpl::batch_gradient_descent(const Mat& _data, const Mat& _labels, const Mat& _init_theta)
 {
+    CV_TRACE_FUNCTION();
     // implements batch gradient descent
     if(this->params.alpha<=0)
     {
@@ -528,7 +579,9 @@ Mat LogisticRegressionImpl::remap_labels(const Mat& _labels_i, const map<int, in
 
     for(int i =0;i<labels.rows;i++)
     {
-        new_labels.at<int>(i,0) = lmap.find(labels.at<int>(i,0))->second;
+        map<int, int>::const_iterator val = lmap.find(labels.at<int>(i,0));
+        CV_Assert(val != lmap.end());
+        new_labels.at<int>(i,0) = val->second;
     }
     return new_labels;
 }
@@ -547,7 +600,8 @@ void LogisticRegressionImpl::write(FileStorage& fs) const
     {
         CV_Error(CV_StsBadArg,"file can't open. Check file path");
     }
-    string desc = "Logisitic Regression Classifier";
+    writeFormat(fs);
+    string desc = "Logistic Regression Classifier";
     fs<<"classifier"<<desc.c_str();
     fs<<"alpha"<<this->params.alpha;
     fs<<"iterations"<<this->params.num_iters;

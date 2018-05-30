@@ -112,7 +112,8 @@ Mat TrainData::getSubVector(const Mat& vec, const Mat& idx)
     return subvec;
 }
 
-class TrainDataImpl : public TrainData
+
+class TrainDataImpl CV_FINAL : public TrainData
 {
 public:
     typedef std::map<String, int> MapType;
@@ -125,75 +126,81 @@ public:
 
     virtual ~TrainDataImpl() { closeFile(); }
 
-    int getLayout() const { return layout; }
-    int getNSamples() const
+    int getLayout() const CV_OVERRIDE { return layout; }
+    int getNSamples() const CV_OVERRIDE
     {
         return !sampleIdx.empty() ? (int)sampleIdx.total() :
                layout == ROW_SAMPLE ? samples.rows : samples.cols;
     }
-    int getNTrainSamples() const
+    int getNTrainSamples() const CV_OVERRIDE
     {
         return !trainSampleIdx.empty() ? (int)trainSampleIdx.total() : getNSamples();
     }
-    int getNTestSamples() const
+    int getNTestSamples() const CV_OVERRIDE
     {
         return !testSampleIdx.empty() ? (int)testSampleIdx.total() : 0;
     }
-    int getNVars() const
+    int getNVars() const CV_OVERRIDE
     {
         return !varIdx.empty() ? (int)varIdx.total() : getNAllVars();
     }
-    int getNAllVars() const
+    int getNAllVars() const CV_OVERRIDE
     {
         return layout == ROW_SAMPLE ? samples.cols : samples.rows;
     }
 
-    Mat getSamples() const { return samples; }
-    Mat getResponses() const { return responses; }
-    Mat getMissing() const { return missing; }
-    Mat getVarIdx() const { return varIdx; }
-    Mat getVarType() const { return varType; }
-    int getResponseType() const
+    Mat getTestSamples() const CV_OVERRIDE
+    {
+        Mat idx = getTestSampleIdx();
+        return idx.empty() ? Mat() : getSubVector(samples, idx);
+    }
+
+    Mat getSamples() const CV_OVERRIDE { return samples; }
+    Mat getResponses() const CV_OVERRIDE { return responses; }
+    Mat getMissing() const CV_OVERRIDE { return missing; }
+    Mat getVarIdx() const CV_OVERRIDE { return varIdx; }
+    Mat getVarType() const CV_OVERRIDE { return varType; }
+    int getResponseType() const CV_OVERRIDE
     {
         return classLabels.empty() ? VAR_ORDERED : VAR_CATEGORICAL;
     }
-    Mat getTrainSampleIdx() const { return !trainSampleIdx.empty() ? trainSampleIdx : sampleIdx; }
-    Mat getTestSampleIdx() const { return testSampleIdx; }
-    Mat getSampleWeights() const
+    Mat getTrainSampleIdx() const CV_OVERRIDE { return !trainSampleIdx.empty() ? trainSampleIdx : sampleIdx; }
+    Mat getTestSampleIdx() const CV_OVERRIDE { return testSampleIdx; }
+    Mat getSampleWeights() const CV_OVERRIDE
     {
         return sampleWeights;
     }
-    Mat getTrainSampleWeights() const
+    Mat getTrainSampleWeights() const CV_OVERRIDE
     {
         return getSubVector(sampleWeights, getTrainSampleIdx());
     }
-    Mat getTestSampleWeights() const
+    Mat getTestSampleWeights() const CV_OVERRIDE
     {
         Mat idx = getTestSampleIdx();
         return idx.empty() ? Mat() : getSubVector(sampleWeights, idx);
     }
-    Mat getTrainResponses() const
+    Mat getTrainResponses() const CV_OVERRIDE
     {
         return getSubVector(responses, getTrainSampleIdx());
     }
-    Mat getTrainNormCatResponses() const
+    Mat getTrainNormCatResponses() const CV_OVERRIDE
     {
         return getSubVector(normCatResponses, getTrainSampleIdx());
     }
-    Mat getTestResponses() const
+    Mat getTestResponses() const CV_OVERRIDE
     {
         Mat idx = getTestSampleIdx();
         return idx.empty() ? Mat() : getSubVector(responses, idx);
     }
-    Mat getTestNormCatResponses() const
+    Mat getTestNormCatResponses() const CV_OVERRIDE
     {
         Mat idx = getTestSampleIdx();
         return idx.empty() ? Mat() : getSubVector(normCatResponses, idx);
     }
-    Mat getNormCatResponses() const { return normCatResponses; }
-    Mat getClassLabels() const { return classLabels; }
+    Mat getNormCatResponses() const CV_OVERRIDE { return normCatResponses; }
+    Mat getClassLabels() const CV_OVERRIDE { return classLabels; }
     Mat getClassCounters() const { return classCounters; }
-    int getCatCount(int vi) const
+    int getCatCount(int vi) const CV_OVERRIDE
     {
         int n = (int)catOfs.total();
         CV_Assert( 0 <= vi && vi < n );
@@ -201,10 +208,10 @@ public:
         return ofs[1] - ofs[0];
     }
 
-    Mat getCatOfs() const { return catOfs; }
-    Mat getCatMap() const { return catMap; }
+    Mat getCatOfs() const CV_OVERRIDE { return catOfs; }
+    Mat getCatMap() const CV_OVERRIDE { return catMap; }
 
-    Mat getDefaultSubstValues() const { return missingSubst; }
+    Mat getDefaultSubstValues() const CV_OVERRIDE { return missingSubst; }
 
     void closeFile() { if(file) fclose(file); file=0; }
     void clear()
@@ -213,6 +220,7 @@ public:
         samples.release();
         missing.release();
         varType.release();
+        varSymbolFlags.release();
         responses.release();
         sampleIdx.release();
         trainSampleIdx.release();
@@ -395,7 +403,7 @@ public:
             Mat(tempCatMap).copyTo(catMap);
         }
 
-        if( varType.at<uchar>(ninputvars) == VAR_CATEGORICAL )
+        if( noutputvars > 0 && varType.at<uchar>(ninputvars) == VAR_CATEGORICAL )
         {
             preprocessCategorical(responses, &normCatResponses, labels, &counters, sortbuf);
             Mat(labels).copyTo(classLabels);
@@ -515,6 +523,7 @@ public:
         std::vector<float> allresponses;
         std::vector<float> rowvals;
         std::vector<uchar> vtypes, rowtypes;
+        std::vector<uchar> vsymbolflags;
         bool haveMissed = false;
         char* buf = &_buf[0];
 
@@ -576,6 +585,9 @@ public:
                 }
                 else
                     vtypes = rowtypes;
+                vsymbolflags.resize(nvars);
+                for( i = 0; i < nvars; i++ )
+                    vsymbolflags[i] = (uchar)(rowtypes[i] == VAR_CATEGORICAL);
 
                 ridx0 = ridx0 >= 0 ? ridx0 : ridx0 == -1 ? nvars - 1 : -1;
                 ridx1 = ridx1 >= 0 ? ridx1 : ridx0 >= 0 ? ridx0+1 : -1;
@@ -591,6 +603,11 @@ public:
             {
                 CV_Assert( (!varTypesSet && vtypes[i] == rowtypes[i]) ||
                            (varTypesSet && (vtypes[i] == rowtypes[i] || rowtypes[i] == VAR_ORDERED)) );
+                uchar sflag = (uchar)(rowtypes[i] == VAR_CATEGORICAL);
+                if( vsymbolflags[i] == VAR_MISSED )
+                    vsymbolflags[i] = sflag;
+                else
+                    CV_Assert(vsymbolflags[i] == sflag || rowtypes[i] == VAR_MISSED);
             }
 
             if( ridx0 >= 0 )
@@ -650,7 +667,10 @@ public:
         }
         bool ok = !samples.empty();
         if(ok)
+        {
             std::swap(tempNameMap, nameMap);
+            Mat(vsymbolflags).copyTo(varSymbolFlags);
+        }
         return ok;
     }
 
@@ -740,9 +760,6 @@ public:
                     }
                 }
                 while(*stopstring != ']');
-
-                if( stopstring[1] != '\0' && stopstring[1] != ',')
-                    CV_Error( CV_StsBadArg, errmsg );
             }
         }
 
@@ -750,13 +767,13 @@ public:
             CV_Error( CV_StsBadArg, "type of some variables is not specified" );
     }
 
-    void setTrainTestSplitRatio(double ratio, bool shuffle)
+    void setTrainTestSplitRatio(double ratio, bool shuffle) CV_OVERRIDE
     {
         CV_Assert( 0. <= ratio && ratio <= 1. );
         setTrainTestSplit(cvRound(getNSamples()*ratio), shuffle);
     }
 
-    void setTrainTestSplit(int count, bool shuffle)
+    void setTrainTestSplit(int count, bool shuffle) CV_OVERRIDE
     {
         int i, nsamples = getNSamples();
         CV_Assert( 0 <= count && count < nsamples );
@@ -793,7 +810,7 @@ public:
         }
     }
 
-    void shuffleTrainTest()
+    void shuffleTrainTest() CV_OVERRIDE
     {
         if( !trainSampleIdx.empty() && !testSampleIdx.empty() )
         {
@@ -827,7 +844,7 @@ public:
 
     Mat getTrainSamples(int _layout,
                         bool compressSamples,
-                        bool compressVars) const
+                        bool compressVars) const CV_OVERRIDE
     {
         if( samples.empty() )
             return samples;
@@ -867,7 +884,7 @@ public:
         return dsamples;
     }
 
-    void getValues( int vi, InputArray _sidx, float* values ) const
+    void getValues( int vi, InputArray _sidx, float* values ) const CV_OVERRIDE
     {
         Mat sidx = _sidx.getMat();
         int i, n = sidx.checkVector(1, CV_32S), nsamples = getNSamples();
@@ -897,7 +914,7 @@ public:
         }
     }
 
-    void getNormCatValues( int vi, InputArray _sidx, int* values ) const
+    void getNormCatValues( int vi, InputArray _sidx, int* values ) const CV_OVERRIDE
     {
         float* fvalues = (float*)values;
         getValues(vi, _sidx, fvalues);
@@ -943,7 +960,7 @@ public:
         }
     }
 
-    void getSample(InputArray _vidx, int sidx, float* buf) const
+    void getSample(InputArray _vidx, int sidx, float* buf) const CV_OVERRIDE
     {
         CV_Assert(buf != 0 && 0 <= sidx && sidx < getNSamples());
         Mat vidx = _vidx.getMat();
@@ -970,14 +987,36 @@ public:
         }
     }
 
+    void getNames(std::vector<String>& names) const CV_OVERRIDE
+    {
+        size_t n = nameMap.size();
+        TrainDataImpl::MapType::const_iterator it = nameMap.begin(),
+                                               it_end = nameMap.end();
+        names.resize(n+1);
+        names[0] = "?";
+        for( ; it != it_end; ++it )
+        {
+            String s = it->first;
+            int label = it->second;
+            CV_Assert( label > 0 && label <= (int)n );
+            names[label] = s;
+        }
+    }
+
+    Mat getVarSymbolFlags() const CV_OVERRIDE
+    {
+        return varSymbolFlags;
+    }
+
     FILE* file;
     int layout;
-    Mat samples, missing, varType, varIdx, responses, missingSubst;
+    Mat samples, missing, varType, varIdx, varSymbolFlags, responses, missingSubst;
     Mat sampleIdx, trainSampleIdx, testSampleIdx;
     Mat sampleWeights, catMap, catOfs;
     Mat normCatResponses, classLabels, classCounters;
     MapType nameMap;
 };
+
 
 Ptr<TrainData> TrainData::loadFromCSV(const String& filename,
                                       int headerLines,
@@ -986,6 +1025,7 @@ Ptr<TrainData> TrainData::loadFromCSV(const String& filename,
                                       const String& varTypeSpec,
                                       char delimiter, char missch)
 {
+    CV_TRACE_FUNCTION_SKIP_NESTED();
     Ptr<TrainDataImpl> td = makePtr<TrainDataImpl>();
     if(!td->loadCSV(filename, headerLines, responseStartIdx, responseEndIdx, varTypeSpec, delimiter, missch))
         td.release();
@@ -996,6 +1036,7 @@ Ptr<TrainData> TrainData::create(InputArray samples, int layout, InputArray resp
                                  InputArray varIdx, InputArray sampleIdx, InputArray sampleWeights,
                                  InputArray varType)
 {
+    CV_TRACE_FUNCTION_SKIP_NESTED();
     Ptr<TrainDataImpl> td = makePtr<TrainDataImpl>();
     td->setData(samples, layout, responses, varIdx, sampleIdx, sampleWeights, varType, noArray());
     return td;
